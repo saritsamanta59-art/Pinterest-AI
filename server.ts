@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
-import fs from 'fs';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -17,34 +17,29 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment');
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 app.use(session({
-  secret: 'pingenius-secret-key-123',
+  secret: process.env.SESSION_SECRET || 'pingenius-secret-key-123',
   resave: false,
   saveUninitialized: false,
-  cookie: { 
+  cookie: {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    maxAge: 30 * 24 * 60 * 60 * 1000
   }
 }));
 
-// Mock Database
-const USERS_FILE = path.join(__dirname, 'users.json');
-const getUsers = () => {
-  if (!fs.existsSync(USERS_FILE)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
-  } catch (e) {
-    return [];
-  }
-};
-const saveUsers = (users: any[]) => {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-};
-
-// Auth Middleware
 const requireAuth = (req: any, res: any, next: any) => {
   if (!req.session.userId) {
     return res.status(401).json({ message: 'Unauthorized' });
@@ -54,37 +49,85 @@ const requireAuth = (req: any, res: any, next: any) => {
 
 // Auth Routes
 app.post('/api/auth/signup', async (req, res) => {
-  const { name, email, password } = req.body;
-  const users = getUsers();
-  if (users.find((u: any) => u.email === email)) {
-    return res.status(400).json({ message: 'User already exists' });
+  try {
+    const { name, email, password } = req.body;
+
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (existing) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const { data: newUser, error } = await supabase
+      .from('users')
+      .insert([{ name, email, password: hashedPassword }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    (req.session as any).userId = newUser.id;
+
+    const { data: accounts } = await supabase
+      .from('pinterest_accounts')
+      .select('*')
+      .eq('user_id', newUser.id);
+
+    res.json({
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        geminiApiKey: newUser.gemini_api_key,
+        pinterestAccounts: accounts || []
+      }
+    });
+  } catch (error: any) {
+    console.error('Signup error:', error);
+    res.status(500).json({ message: error.message || 'Signup failed' });
   }
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = {
-    id: Math.random().toString(36).substr(2, 9),
-    name,
-    email,
-    password: hashedPassword,
-    geminiApiKey: '',
-    pinterestAccounts: []
-  };
-  users.push(newUser);
-  saveUsers(users);
-  (req.session as any).userId = newUser.id;
-  const { password: _, ...userWithoutPassword } = newUser;
-  res.json({ user: userWithoutPassword });
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  const users = getUsers();
-  const user = users.find((u: any) => u.email === email);
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(400).json({ message: 'Invalid credentials' });
+  try {
+    const { email, password } = req.body;
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (error || !user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    (req.session as any).userId = user.id;
+
+    const { data: accounts } = await supabase
+      .from('pinterest_accounts')
+      .select('*')
+      .eq('user_id', user.id);
+
+    res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        geminiApiKey: user.gemini_api_key,
+        pinterestAccounts: accounts || []
+      }
+    });
+  } catch (error: any) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: error.message || 'Login failed' });
   }
-  (req.session as any).userId = user.id;
-  const { password: _, ...userWithoutPassword } = user;
-  res.json({ user: userWithoutPassword });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -93,68 +136,154 @@ app.post('/api/auth/logout', (req, res) => {
   });
 });
 
-app.get('/api/auth/me', (req, res) => {
-  if (!(req.session as any).userId) return res.status(401).json({ message: 'Not logged in' });
-  const users = getUsers();
-  const user = users.find((u: any) => u.id === (req.session as any).userId);
-  if (!user) return res.status(401).json({ message: 'User not found' });
-  const { password: _, ...userWithoutPassword } = user;
-  res.json({ user: userWithoutPassword });
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    if (!(req.session as any).userId) {
+      return res.status(401).json({ message: 'Not logged in' });
+    }
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', (req.session as any).userId)
+      .maybeSingle();
+
+    if (error || !user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const { data: accounts } = await supabase
+      .from('pinterest_accounts')
+      .select('*')
+      .eq('user_id', user.id);
+
+    res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        geminiApiKey: user.gemini_api_key,
+        pinterestAccounts: accounts || []
+      }
+    });
+  } catch (error: any) {
+    console.error('Auth check error:', error);
+    res.status(500).json({ message: error.message || 'Auth check failed' });
+  }
 });
 
 app.put('/api/user/profile', requireAuth, async (req, res) => {
-  const { name, email, geminiApiKey, pinterestAccounts } = req.body;
-  const users = getUsers();
-  const index = users.findIndex((u: any) => u.id === (req.session as any).userId);
-  if (index === -1) return res.status(404).json({ message: 'User not found' });
-  
-  users[index] = { 
-    ...users[index], 
-    name: name || users[index].name, 
-    email: email || users[index].email, 
-    geminiApiKey: geminiApiKey !== undefined ? geminiApiKey : users[index].geminiApiKey,
-    pinterestAccounts: pinterestAccounts !== undefined ? pinterestAccounts : users[index].pinterestAccounts
-  };
-  saveUsers(users);
-  
-  const { password: _, ...userWithoutPassword } = users[index];
-  res.json({ user: userWithoutPassword });
+  try {
+    const { name, email, geminiApiKey } = req.body;
+    const userId = (req.session as any).userId;
+
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (geminiApiKey !== undefined) updateData.gemini_api_key = geminiApiKey;
+    updateData.updated_at = new Date().toISOString();
+
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const { data: accounts } = await supabase
+      .from('pinterest_accounts')
+      .select('*')
+      .eq('user_id', userId);
+
+    res.json({
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        geminiApiKey: updatedUser.gemini_api_key,
+        pinterestAccounts: accounts || []
+      }
+    });
+  } catch (error: any) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ message: error.message || 'Update failed' });
+  }
 });
 
 app.delete('/api/user/account', requireAuth, async (req, res) => {
-  const users = getUsers();
-  const index = users.findIndex((u: any) => u.id === (req.session as any).userId);
-  if (index === -1) return res.status(404).json({ message: 'User not found' });
-  
-  users.splice(index, 1);
-  saveUsers(users);
-  
-  req.session.destroy(() => {
-    res.json({ message: 'Account deleted' });
-  });
+  try {
+    const userId = (req.session as any).userId;
+
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    req.session.destroy(() => {
+      res.json({ message: 'Account deleted' });
+    });
+  } catch (error: any) {
+    console.error('Account deletion error:', error);
+    res.status(500).json({ message: error.message || 'Deletion failed' });
+  }
 });
 
 app.post('/api/user/pinterest-accounts', requireAuth, async (req, res) => {
-  const { account } = req.body;
-  if (!account) return res.status(400).json({ message: 'Account data required' });
+  try {
+    const { account } = req.body;
+    if (!account) {
+      return res.status(400).json({ message: 'Account data required' });
+    }
 
-  const users = getUsers();
-  const index = users.findIndex((u: any) => u.id === (req.session as any).userId);
-  if (index === -1) return res.status(404).json({ message: 'User not found' });
+    const userId = (req.session as any).userId;
 
-  const currentAccounts = users[index].pinterestAccounts || [];
-  const existingIndex = currentAccounts.findIndex((a: any) => a.username === account.username);
-  
-  if (existingIndex > -1) {
-    currentAccounts[existingIndex] = account;
-  } else {
-    currentAccounts.push(account);
+    const { data: existing } = await supabase
+      .from('pinterest_accounts')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('username', account.username)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase
+        .from('pinterest_accounts')
+        .update({
+          access_token: account.accessToken,
+          profile_image: account.profileImage,
+          boards: account.boards || [],
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id);
+
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('pinterest_accounts')
+        .insert([{
+          user_id: userId,
+          access_token: account.accessToken,
+          username: account.username,
+          profile_image: account.profileImage,
+          boards: account.boards || []
+        }]);
+
+      if (error) throw error;
+    }
+
+    const { data: accounts } = await supabase
+      .from('pinterest_accounts')
+      .select('*')
+      .eq('user_id', userId);
+
+    res.json({ message: 'Account saved', accounts: accounts || [] });
+  } catch (error: any) {
+    console.error('Pinterest account save error:', error);
+    res.status(500).json({ message: error.message || 'Failed to save account' });
   }
-
-  users[index].pinterestAccounts = currentAccounts;
-  saveUsers(users);
-
-  res.json({ message: 'Account saved', accounts: currentAccounts });
 });
 
 // Pinterest OAuth Config

@@ -27,11 +27,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkAuth();
   }, []);
 
+  const transformPinterestAccounts = (accounts: any[]) => {
+    if (!Array.isArray(accounts)) return [];
+    return accounts.map((acc: any) => ({
+      accessToken: acc.access_token || acc.accessToken,
+      username: acc.username,
+      profileImage: acc.profile_image || acc.profileImage,
+      boards: acc.boards || []
+    }));
+  };
+
   const checkAuth = async () => {
     try {
       const res = await fetch('/api/auth/me');
       if (res.ok) {
         const data = await res.json();
+        if (data.user) {
+          data.user.pinterestAccounts = transformPinterestAccounts(data.user.pinterestAccounts);
+        }
         setUser(data.user);
       }
     } catch (error) {
@@ -52,6 +65,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(err.message || 'Login failed');
     }
     const data = await res.json();
+    if (data.user) {
+      data.user.pinterestAccounts = transformPinterestAccounts(data.user.pinterestAccounts);
+    }
     setUser(data.user);
   };
 
@@ -66,6 +82,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(err.message || 'Signup failed');
     }
     const data = await res.json();
+    if (data.user) {
+      data.user.pinterestAccounts = transformPinterestAccounts(data.user.pinterestAccounts);
+    }
     setUser(data.user);
   };
 
@@ -85,6 +104,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(err.message || 'Update failed');
     }
     const updatedUser = await res.json();
+    if (updatedUser.user) {
+      updatedUser.user.pinterestAccounts = transformPinterestAccounts(updatedUser.user.pinterestAccounts);
+    }
     setUser(updatedUser.user);
   };
 
