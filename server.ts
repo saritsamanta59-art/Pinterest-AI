@@ -52,9 +52,16 @@ const requireAuth = (req: any, res: any, next: any) => {
   next();
 };
 
+// Logging middleware for API requests
+app.use('/api', (req, res, next) => {
+  console.log(`API Request: ${req.method} ${req.url}`);
+  next();
+});
+
 // Auth Routes
 app.post('/api/auth/signup', async (req, res) => {
   const { name, email, password } = req.body;
+  console.log(`Signup attempt for: ${email}`);
   const users = getUsers();
   if (users.find((u: any) => u.email === email)) {
     return res.status(400).json({ message: 'User already exists' });
@@ -77,6 +84,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
+  console.log(`Login attempt for: ${email}`);
   const users = getUsers();
   const user = users.find((u: any) => u.email === email);
   if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -241,7 +249,7 @@ app.get('/auth/pinterest/callback', async (req, res) => {
           <div class="card">
             <div id="status-icon" class="spinner"></div>
             <h2 id="status-text">Completing Connection...</h2>
-            <p id="sub-text">Please wait while we sync your Pinterest account.</p>
+            <div id="sub-text">Please wait while we sync your Pinterest account.</div>
             <button id="close-btn" class="btn" style="display:none;" onclick="window.close()">Close Window</button>
           </div>
           <script>
@@ -363,18 +371,36 @@ app.post('/api/pinterest/proxy', async (req, res) => {
   }
 });
 
+// 404 handler for API routes
+app.all('/api/*', (req, res) => {
+  console.warn(`404 API Route Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ message: `API route not found: ${req.method} ${req.url}` });
+});
+
 // Vite middleware for development
-if (process.env.NODE_ENV !== 'production') {
+const isProduction = process.env.NODE_ENV === 'production' || fs.existsSync(path.join(__dirname, 'dist'));
+
+if (!isProduction) {
+  console.log('Starting in Development mode (Vite middleware)...');
   const vite = await createViteServer({
     server: { middlewareMode: true },
     appType: 'spa',
   });
   app.use(vite.middlewares);
 } else {
-  app.use(express.static(path.join(__dirname, 'dist')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-  });
+  console.log('Starting in Production mode (Static files)...');
+  const distPath = path.join(__dirname, 'dist');
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
+    console.error('CRITICAL: dist folder not found! Please run npm run build.');
+    app.get('*', (req, res) => {
+      res.status(500).send('Production build missing. Please run npm run build.');
+    });
+  }
 }
 
 app.listen(PORT, '0.0.0.0', () => {
