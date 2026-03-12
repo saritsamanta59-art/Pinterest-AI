@@ -375,6 +375,9 @@ export default function App() {
       if (msg.toLowerCase().includes('business') || msg.toLowerCase().includes('permission')) {
         msg += " (Note: Pinterest scheduling requires a Business Account)";
       }
+      if (msg.includes('Trial" mode')) {
+        msg += " -> To fix this, go to App Settings and set PINTEREST_USE_SANDBOX=true";
+      }
       setPublishStatus(`Error: ${msg}`);
     } finally {
       setIsPublishing(false);

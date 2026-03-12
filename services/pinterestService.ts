@@ -12,9 +12,17 @@ const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, de
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
+      
+      // If we get a 503, it might be a temporary overload, so we retry
+      if (response.status === 503 && i < retries - 1) {
+        console.warn(`Server returned 503, retrying (${i + 1}/${retries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+        continue;
+      }
+      
       return response;
     } catch (err: any) {
-      const isNetworkError = err.message?.includes('Failed to fetch') || err.name === 'TypeError';
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.name === 'TypeError' || err.message?.includes('aborted');
       if (isNetworkError && i < retries - 1) {
         console.warn(`Fetch failed, retrying (${i + 1}/${retries})...`, err.message);
         await new Promise(resolve => setTimeout(resolve, delay * (i + 1))); // Exponential backoff
@@ -59,8 +67,15 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
 
   if (!response.ok) {
     let errorMessage = 'Failed to create Pinterest pin';
+    let responseText = '';
     try {
-      const errorData = await response.json();
+      responseText = await response.text();
+    } catch (e) {
+      console.error('Failed to read error response body');
+    }
+
+    try {
+      const errorData = JSON.parse(responseText);
       // The proxy returns { message, details }
       errorMessage = errorData.message || errorMessage;
       
@@ -73,13 +88,9 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
         errorMessage = details.message;
       }
     } catch (e) {
-      // If not JSON, try text
-      try {
-        const text = await response.text();
-        console.error('Raw error response:', text);
-        errorMessage = text || errorMessage;
-      } catch (e2) {
-        console.error('Failed to read error response as text');
+      // If not JSON, use the raw text if available
+      if (responseText) {
+        errorMessage = responseText;
       }
     }
     throw new Error(errorMessage);
@@ -108,14 +119,20 @@ export const fetchPinterestBoards = async (token: string, idToken: string) => {
 
   if (!response.ok) {
     let errorMessage = 'Failed to fetch Pinterest boards';
+    let responseText = '';
     try {
-      const errorData = await response.json();
+      responseText = await response.text();
+    } catch (e) {
+      console.error('Failed to read error response body');
+    }
+
+    try {
+      const errorData = JSON.parse(responseText);
       errorMessage = errorData.message || errorMessage;
     } catch (e) {
-      try {
-        const text = await response.text();
-        errorMessage = text || errorMessage;
-      } catch (e2) {}
+      if (responseText) {
+        errorMessage = responseText;
+      }
     }
     throw new Error(errorMessage);
   }

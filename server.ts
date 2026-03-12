@@ -178,21 +178,38 @@ app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
     }
   }
   
+  const useSandbox = process.env.PINTEREST_USE_SANDBOX === 'true';
+  const baseUrl = useSandbox ? 'https://api-sandbox.pinterest.com/v5' : 'https://api.pinterest.com/v5';
+  
   try {
     const response = await axios({
-      url: `https://api.pinterest.com/v5${endpoint}`,
+      url: `${baseUrl}${endpoint}`,
       method: method || 'GET',
       data: data,
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
-      }
+      },
+      timeout: 45000, // 45 seconds timeout
     });
     res.json(response.data);
   } catch (error: any) {
-    const errorData = error.response?.data;
     const status = error.response?.status || 500;
-    let message = errorData?.message || (errorData?.errors && errorData.errors[0]?.message) || error.message;
+    const errorData = error.response?.data;
+    
+    let message = 'An error occurred while communicating with Pinterest.';
+    
+    if (status === 503) {
+      message = 'Pinterest service is temporarily unavailable. Please try again in a few moments.';
+    } else if (status === 403 && errorData?.message?.includes('Trial access')) {
+      message = 'Your Pinterest App is in "Trial" mode and cannot publish to production. Please set PINTEREST_USE_SANDBOX=true in your environment variables to use the API Sandbox.';
+    } else if (errorData) {
+      message = errorData.message || (errorData.errors && errorData.errors[0]?.message) || error.message;
+    } else {
+      message = error.message;
+    }
+
+    console.error(`Pinterest Proxy Error [${status}]:`, message);
     res.status(status).json({ message, details: errorData });
   }
 });
