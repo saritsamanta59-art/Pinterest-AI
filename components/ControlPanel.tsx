@@ -55,6 +55,7 @@ interface ControlPanelProps {
   onPublishSingle: (idx: number, schedule?: boolean, customDate?: string) => void;
   scheduleDate: string;
   setScheduleDate: (d: string) => void;
+  isSandbox?: boolean;
 }
 
 const COLOR_SCHEMES = [
@@ -101,7 +102,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   publishStatus,
   onPublishSingle,
   scheduleDate,
-  setScheduleDate
+  setScheduleDate,
+  isSandbox
 }) => {
   const [copiedTitle, setCopiedTitle] = useState(false);
   const [copiedDesc, setCopiedDesc] = useState(false);
@@ -161,6 +163,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div className="flex items-center justify-between">
           <label className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
             <Send className="w-4 h-4 text-red-600" /> Pinterest Accounts
+            {isSandbox && (
+              <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[8px] font-black uppercase tracking-tighter border border-amber-200">
+                Sandbox
+              </span>
+            )}
           </label>
           <button 
             onClick={onConnect}
@@ -174,6 +181,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
         {accounts.length > 0 ? (
           <div className="space-y-4">
+            {isSandbox && (
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 space-y-2">
+                <p className="text-[10px] font-bold text-amber-800 uppercase flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> Sandbox Mode Active
+                </p>
+                <p className="text-[9px] text-amber-700 leading-relaxed">
+                  Ensure your Pinterest account is added as a <strong>Sandbox User</strong> in the <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener noreferrer" className="underline font-bold">Developer Portal</a>. Regular accounts will return 403 Forbidden errors in sandbox mode.
+                </p>
+              </div>
+            )}
             <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
               {accounts.map(acc => (
                 <button

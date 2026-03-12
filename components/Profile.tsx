@@ -13,7 +13,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Smartphone,
-  Globe
+  Globe,
+  Copy,
+  Info
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -217,6 +219,32 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
                     {isConnectingPinterest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                     Add Account
                   </button>
+                </div>
+
+                {/* Redirect URI Info for Custom Domains */}
+                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-3">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <Info className="w-4 h-4" />
+                    <h5 className="text-[11px] font-bold uppercase tracking-wider">Deployment Info</h5>
+                  </div>
+                  <p className="text-[10px] text-blue-700 leading-relaxed">
+                    If you are deploying to a custom domain (e.g., Hostinger), ensure you add this Redirect URI to your Pinterest App settings:
+                  </p>
+                  <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-blue-200">
+                    <code className="text-[9px] font-mono text-blue-800 break-all flex-1">
+                      {window.location.origin}/auth/pinterest/callback
+                    </code>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/auth/pinterest/callback`);
+                        alert('Redirect URI copied to clipboard!');
+                      }}
+                      className="p-1 hover:bg-blue-50 rounded text-blue-600"
+                      title="Copy to clipboard"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
 

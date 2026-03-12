@@ -22,7 +22,11 @@ const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, de
       
       return response;
     } catch (err: any) {
-      const isNetworkError = err.message?.includes('Failed to fetch') || err.name === 'TypeError' || err.message?.includes('aborted');
+      const msg = err.message?.toLowerCase() || '';
+      const isNetworkError = msg.includes('failed to fetch') || 
+                             err.name === 'TypeError' || 
+                             msg.includes('aborted');
+      
       if (isNetworkError && i < retries - 1) {
         console.warn(`Fetch failed, retrying (${i + 1}/${retries})...`, err.message);
         await new Promise(resolve => setTimeout(resolve, delay * (i + 1))); // Exponential backoff
@@ -32,6 +36,20 @@ const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, de
     }
   }
   throw new Error('Fetch failed after multiple retries');
+};
+
+export const getPinterestConfig = async (idToken: string) => {
+  try {
+    const response = await fetch('/api/pinterest/config', {
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+      },
+    });
+    if (!response.ok) return { useSandbox: false };
+    return await response.json();
+  } catch (e) {
+    return { useSandbox: false };
+  }
 };
 
 export const createPinterestPin = async (data: PinterestPinData, token: string, idToken: string) => {
@@ -51,18 +69,22 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
     payload.publish_at = data.publishAt;
   }
 
+  const jsonPayload = JSON.stringify({
+    endpoint: '/pins',
+    method: 'POST',
+    data: payload,
+    token: token
+  });
+
+  console.log(`[Pinterest Service] Payload size: ${Math.round(jsonPayload.length / 1024)} KB`);
+
   const response = await fetchWithRetry('/api/pinterest/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${idToken}`,
     },
-    body: JSON.stringify({
-      endpoint: '/pins',
-      method: 'POST',
-      data: payload,
-      token: token
-    }),
+    body: jsonPayload,
   });
 
   if (!response.ok) {
@@ -90,7 +112,11 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
     } catch (e) {
       // If not JSON, use the raw text if available
       if (responseText) {
-        errorMessage = responseText;
+        if (responseText.includes('<title>403 Forbidden</title>')) {
+          errorMessage = "Access Forbidden (403). This usually means your Pinterest account or app doesn't have permission to perform this action, or the request was blocked by a security filter.";
+        } else {
+          errorMessage = responseText;
+        }
       }
     }
     throw new Error(errorMessage);

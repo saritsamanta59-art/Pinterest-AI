@@ -129,5 +129,5 @@ export const renderPinToDataUrl = async (variation: PinVariation, config: PinCon
     ctx.fillText(config.brandText, 1000/2, config.showCta ? 1500 * 0.85 : 1500 - 40);
   }
 
-  return canvas.toDataURL('image/jpeg', 0.7);
+  return canvas.toDataURL('image/jpeg', 0.4);
 };

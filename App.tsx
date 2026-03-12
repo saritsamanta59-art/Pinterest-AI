@@ -8,7 +8,7 @@ import { Profile } from './components/Profile';
 import { useAuth } from './components/AuthContext';
 import { generatePinVariations, generatePinImage } from './services/geminiService';
 import { PinVariation, PinConfig, FONTS, PinterestAccount } from './types';
-import { fetchPinterestBoards, createPinterestPin } from './services/pinterestService';
+import { fetchPinterestBoards, createPinterestPin, getPinterestConfig } from './services/pinterestService';
 import { renderPinToDataUrl } from './services/renderService';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -39,6 +39,7 @@ export default function App() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [pinterestConfig, setPinterestConfig] = useState({ useSandbox: false });
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [loadingImages, setLoadingImages] = useState<Record<number, boolean>>({});
   const processingImages = useRef<Set<number>>(new Set());
@@ -95,6 +96,17 @@ export default function App() {
     colorScheme: 'standard'
   });
 
+  useEffect(() => {
+    const fetchConfig = async () => {
+      const idToken = await getIdToken();
+      if (idToken) {
+        const config = await getPinterestConfig(idToken);
+        setPinterestConfig(config);
+      }
+    };
+    fetchConfig();
+  }, [user]);
+
   const handleGenerate = async () => {
     if (!keyword.trim()) return;
     setIsGeneratingText(true);
@@ -123,7 +135,7 @@ export default function App() {
         throw new Error("No variations generated.");
       }
     } catch (error: any) {
-      if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
+      if (error.name === 'AbortError' || error.message?.toLowerCase().includes('aborted')) return;
       setErrorMsg(error.message || "Failed to generate content.");
     } finally {
       setIsGeneratingText(false);
@@ -266,7 +278,7 @@ export default function App() {
             });
           } catch (e: any) {
             // Ignore abort errors as they are usually intentional or benign during navigation
-            if (e.name === 'AbortError' || e.message?.includes('aborted')) {
+            if (e.name === 'AbortError' || e.message?.toLowerCase().includes('aborted')) {
               console.log('Image generation aborted for index', i);
               return;
             }
@@ -369,7 +381,7 @@ export default function App() {
       setPublishStatus(schedule ? `Successfully scheduled Pin #${index + 1}!` : `Successfully published Pin #${index + 1}!`);
       setTimeout(() => setPublishStatus(null), 5000);
     } catch (error: any) {
-      if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
+      if (error.name === 'AbortError' || error.message?.toLowerCase().includes('aborted')) return;
       console.error('Publishing Error:', error);
       let msg = error.message;
       if (msg.toLowerCase().includes('business') || msg.toLowerCase().includes('permission')) {
@@ -483,6 +495,7 @@ export default function App() {
                     onPublishSingle={handlePublishSingle}
                     scheduleDate={scheduleDate}
                     setScheduleDate={setScheduleDate}
+                    isSandbox={pinterestConfig.useSandbox}
                   />
                 </div>
                 <div className="w-full lg:w-2/3 order-1 lg:order-2 flex flex-col items-center justify-start lg:pt-4">

@@ -19,6 +19,7 @@ admin.initializeApp({
 });
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
@@ -39,8 +40,8 @@ const getRedirectUri = (req: express.Request) => {
   if (process.env.APP_URL) {
     return `${process.env.APP_URL}/auth/pinterest/callback`;
   }
-  const protocol = req.headers['x-forwarded-proto'] || 'http';
-  const host = req.headers.host;
+  const host = req.headers.host || '';
+  const protocol = req.headers['x-forwarded-proto'] || (host.includes('localhost') ? 'http' : 'https');
   return `${protocol}://${host}/auth/pinterest/callback`;
 };
 
@@ -169,17 +170,32 @@ app.get('/auth/pinterest/callback', async (req, res) => {
 });
 
 // 3. Pinterest API Proxy
+app.get('/api/pinterest/config', requireAuth, (req, res) => {
+  res.json({
+    useSandbox: process.env.PINTEREST_USE_SANDBOX === 'true'
+  });
+});
+
 app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
   const { endpoint, method, data, token } = req.body;
   
+  console.log(`[Pinterest Proxy] ${method || 'GET'} ${endpoint}`);
+
   if (method === 'POST') {
     if (data?.media_source?.source_type === 'image_base64' && typeof data.media_source.data === 'string') {
+      // Clean base64 string
       data.media_source.data = data.media_source.data.replace(/[^a-zA-Z0-9+/=]/g, '');
     }
   }
   
   const useSandbox = process.env.PINTEREST_USE_SANDBOX === 'true';
   const baseUrl = useSandbox ? 'https://api-sandbox.pinterest.com/v5' : 'https://api.pinterest.com/v5';
+  
+  console.log(`[Pinterest Proxy] Using Base URL: ${baseUrl}`);
+
+  if (data?.media_source?.data) {
+    console.log(`[Pinterest Proxy] Payload size: ${Math.round(JSON.stringify(data).length / 1024)} KB`);
+  }
   
   try {
     const response = await axios({
@@ -189,8 +205,10 @@ app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
+        'User-Agent': 'PinGenius/2.0 (https://pingenius.ai)',
+        'Accept': 'application/json',
       },
-      timeout: 45000, // 45 seconds timeout
+      timeout: 60000, // 60 seconds timeout
     });
     res.json(response.data);
   } catch (error: any) {
@@ -201,8 +219,18 @@ app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
     
     if (status === 503) {
       message = 'Pinterest service is temporarily unavailable. Please try again in a few moments.';
-    } else if (status === 403 && errorData?.message?.includes('Trial access')) {
-      message = 'Your Pinterest App is in "Trial" mode and cannot publish to production. Please set PINTEREST_USE_SANDBOX=true in your environment variables to use the API Sandbox.';
+    } else if (status === 403) {
+      if (typeof errorData === 'object') {
+        if (errorData?.message?.includes('Trial access')) {
+          message = 'Your Pinterest App is in "Trial" mode and cannot publish to production. Please set PINTEREST_USE_SANDBOX=true in your environment variables to use the API Sandbox.';
+        } else if (errorData?.message?.includes('scope')) {
+          message = 'Insufficient permissions (Scope Error). Your Pinterest app may not have "pins:write" or "boards:read" permissions approved.';
+        } else {
+          message = errorData.message || (errorData.errors && errorData.errors[0]?.message) || 'Access Forbidden (403). Ensure your Pinterest account is added as a "Sandbox User" in the developer portal.';
+        }
+      } else if (typeof errorData === 'string' && errorData.includes('<html>')) {
+        message = 'Pinterest returned a Forbidden (403) HTML error. This often happens if the request is blocked by a security filter or if the API token is invalid for this environment.';
+      }
     } else if (errorData) {
       message = errorData.message || (errorData.errors && errorData.errors[0]?.message) || error.message;
     } else {
