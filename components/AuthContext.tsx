@@ -1,4 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  User as FirebaseUser 
+} from 'firebase/auth';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc,
+  onSnapshot
+} from 'firebase/firestore';
+import { auth, db, googleProvider } from '../firebase';
 
 interface User {
   id: string;
@@ -11,10 +26,11 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (name: string, email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  getIdToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,94 +40,90 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // User is signed in, fetch data from Firestore
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        
+        // Use onSnapshot for real-time updates
+        const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUser(docSnap.data() as User);
+          } else {
+            // Create user doc if it doesn't exist (first time login)
+            const newUser: User = {
+              id: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              name: firebaseUser.displayName || 'User',
+              geminiApiKey: '',
+              pinterestAccounts: []
+            };
+            setDoc(userDocRef, newUser);
+            setUser(newUser);
+          }
+          setLoading(false);
+        }, (error) => {
+          console.error('Firestore snapshot error:', error);
+          setLoading(false);
+        });
+
+        return () => unsubDoc();
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const transformPinterestAccounts = (accounts: any[]) => {
-    if (!Array.isArray(accounts)) return [];
-    return accounts.map((acc: any) => ({
-      accessToken: acc.access_token || acc.accessToken,
-      username: acc.username,
-      profileImage: acc.profile_image || acc.profileImage,
-      boards: acc.boards || []
-    }));
-  };
-
-  const checkAuth = async () => {
+  const loginWithGoogle = async () => {
     try {
-      const res = await fetch('/api/auth/me');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          data.user.pinterestAccounts = transformPinterestAccounts(data.user.pinterestAccounts);
-        }
-        setUser(data.user);
-      }
+      await signInWithPopup(auth, googleProvider);
     } catch (error) {
-      console.error('Auth check failed', error);
-    } finally {
-      setLoading(false);
+      console.error('Google login failed', error);
+      throw error;
     }
-  };
-
-  const login = async (email: string, password: string) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Login failed');
-    }
-    const data = await res.json();
-    if (data.user) {
-      data.user.pinterestAccounts = transformPinterestAccounts(data.user.pinterestAccounts);
-    }
-    setUser(data.user);
-  };
-
-  const signup = async (name: string, email: string, password: string) => {
-    const res = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Signup failed');
-    }
-    const data = await res.json();
-    if (data.user) {
-      data.user.pinterestAccounts = transformPinterestAccounts(data.user.pinterestAccounts);
-    }
-    setUser(data.user);
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    setUser(null);
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
   };
 
   const updateProfile = async (data: Partial<User>) => {
-    const res = await fetch('/api/user/profile', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Update failed');
+    if (!user) return;
+    try {
+      const userDocRef = doc(db, 'users', user.id);
+      await updateDoc(userDocRef, data);
+    } catch (error) {
+      console.error('Update profile failed', error);
+      throw error;
     }
-    const updatedUser = await res.json();
-    if (updatedUser.user) {
-      updatedUser.user.pinterestAccounts = transformPinterestAccounts(updatedUser.user.pinterestAccounts);
+  };
+
+  const deleteAccount = async () => {
+    if (!user) return;
+    try {
+      const userDocRef = doc(db, 'users', user.id);
+      await deleteDoc(userDocRef);
+      await auth.currentUser?.delete();
+    } catch (error) {
+      console.error('Delete account failed', error);
+      throw error;
     }
-    setUser(updatedUser.user);
+  };
+
+  const getIdToken = async () => {
+    if (!auth.currentUser) return null;
+    return await auth.currentUser.getIdToken();
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, updateProfile }}>
+    <AuthContext.Provider value={{ user, loading, loginWithGoogle, logout, updateProfile, deleteAccount, getIdToken }}>
       {children}
     </AuthContext.Provider>
   );

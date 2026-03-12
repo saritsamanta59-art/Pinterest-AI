@@ -8,7 +8,7 @@ export interface PinterestPinData {
   publishAt?: string; // ISO 8601 string for scheduling
 }
 
-export const createPinterestPin = async (data: PinterestPinData, token: string) => {
+export const createPinterestPin = async (data: PinterestPinData, token: string, idToken: string) => {
   const payload: any = {
     title: data.title,
     description: data.description,
@@ -29,6 +29,7 @@ export const createPinterestPin = async (data: PinterestPinData, token: string) 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`,
     },
     body: JSON.stringify({
       endpoint: '/pins',
@@ -73,11 +74,12 @@ export const createPinterestPin = async (data: PinterestPinData, token: string) 
   }
 };
 
-export const fetchPinterestBoards = async (token: string) => {
+export const fetchPinterestBoards = async (token: string, idToken: string) => {
   const response = await fetch('/api/pinterest/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`,
     },
     body: JSON.stringify({
       endpoint: '/boards',

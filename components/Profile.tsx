@@ -22,9 +22,8 @@ interface ProfileProps {
 }
 
 export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnectingPinterest }) => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, deleteAccount } = useAuth();
   const [name, setName] = useState(user?.name || '');
-  const [email, setEmail] = useState(user?.email || '');
   const [geminiKey, setGeminiKey] = useState(user?.geminiApiKey || '');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
@@ -34,7 +33,7 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
     setLoading(true);
     setStatus(null);
     try {
-      await updateProfile({ name, email, geminiApiKey: geminiKey });
+      await updateProfile({ name, geminiApiKey: geminiKey });
       setStatus({ type: 'success', msg: 'Profile updated successfully!' });
     } catch (err: any) {
       setStatus({ type: 'error', msg: err.message });
@@ -50,15 +49,10 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
     
     setLoading(true);
     try {
-      const res = await fetch('/api/user/account', { method: 'DELETE' });
-      if (res.ok) {
-        window.location.href = '/auth';
-      } else {
-        const err = await res.json();
-        setStatus({ type: 'error', msg: err.message || 'Failed to delete account' });
-      }
+      await deleteAccount();
+      window.location.href = '/auth';
     } catch (err: any) {
-      setStatus({ type: 'error', msg: err.message });
+      setStatus({ type: 'error', msg: err.message || 'Failed to delete account' });
     } finally {
       setLoading(false);
     }
@@ -107,9 +101,9 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
                         type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+                        value={user?.email || ''}
+                        readOnly
+                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed focus:outline-none transition-all"
                       />
                     </div>
                   </div>

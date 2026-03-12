@@ -23,7 +23,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function App() {
-  const { user, logout, loading: authLoading } = useAuth();
+  const { user, logout, loading: authLoading, getIdToken, updateProfile } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const canvasPreviewRef = useRef<CanvasPreviewHandle>(null);
@@ -52,15 +52,32 @@ export default function App() {
   // Load accounts from user object
   useEffect(() => {
     if (user?.pinterestAccounts) {
-      setAccounts(user.pinterestAccounts);
-      if (user.pinterestAccounts.length > 0 && !selectedAccountId) {
-        setSelectedAccountId(user.pinterestAccounts[0].username);
-        if (user.pinterestAccounts[0].boards?.length > 0) {
-          setSelectedBoardId(user.pinterestAccounts[0].boards[0].id);
+      const userAccounts = user.pinterestAccounts;
+      setAccounts(userAccounts);
+      
+      // If we have accounts but none selected, select the first one
+      if (userAccounts.length > 0 && !selectedAccountId) {
+        setSelectedAccountId(userAccounts[0].username);
+        if (userAccounts[0].boards?.length > 0) {
+          setSelectedBoardId(userAccounts[0].boards[0].id);
+        }
+      } 
+      // If the selected account was removed, select the first available one or null
+      else if (selectedAccountId && !userAccounts.find(a => a.username === selectedAccountId)) {
+        if (userAccounts.length > 0) {
+          setSelectedAccountId(userAccounts[0].username);
+          setSelectedBoardId(userAccounts[0].boards?.[0]?.id || null);
+        } else {
+          setSelectedAccountId(null);
+          setSelectedBoardId(null);
         }
       }
+    } else {
+      setAccounts([]);
+      setSelectedAccountId(null);
+      setSelectedBoardId(null);
     }
-  }, [user]);
+  }, [user, selectedAccountId]);
 
   // Configuration State
   const [config, setConfig] = useState<PinConfig>({
@@ -174,30 +191,34 @@ export default function App() {
       
       // Fetch boards for the new account
       try {
-        const boards = await fetchPinterestBoards(userData.accessToken);
+        const idToken = await getIdToken();
+        if (!idToken) throw new Error("Not authenticated");
+
+        const boards = await fetchPinterestBoards(userData.accessToken, idToken);
         const newAccount = { ...userData, boards };
         
-        // Save to server
-        await fetch('/api/user/pinterest-accounts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account: newAccount })
-        });
+        // Save to Firestore via updateProfile
+        const currentAccounts = user?.pinterestAccounts || [];
+        const existsIdx = currentAccounts.findIndex((a: any) => a.username === newAccount.username);
+        let updatedAccounts;
+        if (existsIdx >= 0) {
+          updatedAccounts = [...currentAccounts];
+          updatedAccounts[existsIdx] = newAccount;
+        } else {
+          updatedAccounts = [...currentAccounts, newAccount];
+        }
 
-        setAccounts(prev => {
-          const exists = prev.find(a => a.username === newAccount.username);
-          if (exists) {
-            return prev.map(a => a.username === newAccount.username ? newAccount : a);
-          }
-          return [...prev, newAccount];
-        });
+        await updateProfile({ pinterestAccounts: updatedAccounts });
+
+        setAccounts(updatedAccounts);
         
         if (!selectedAccountId) {
           setSelectedAccountId(newAccount.username);
           if (boards.length > 0) setSelectedBoardId(boards[0].id);
         }
       } catch (e) {
-        console.error('Failed to fetch boards', e);
+        console.error('Failed to fetch boards or save account', e);
+        setErrorMsg('Failed to sync Pinterest account.');
       }
     };
 
@@ -338,7 +359,10 @@ export default function App() {
       }
 
       const { createPinterestPin } = await import('./services/pinterestService');
-      await createPinterestPin(pinData, account.accessToken);
+      const idToken = await getIdToken();
+      if (!idToken) throw new Error("Not authenticated");
+
+      await createPinterestPin(pinData, account.accessToken, idToken);
 
       setPublishStatus(schedule ? `Successfully scheduled Pin #${index + 1}!` : `Successfully published Pin #${index + 1}!`);
       setTimeout(() => setPublishStatus(null), 5000);

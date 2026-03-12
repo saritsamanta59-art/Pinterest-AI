@@ -1,0 +1,34 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "geminiApiKey": { "type": "string" },
+        "pinterestAccounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "username": { "type": "string" },
+              "profileImage": { "type": "string" },
+              "accessToken": { "type": "string" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User documents stored by their Firebase Auth UID"
+    }
+  }
+}
