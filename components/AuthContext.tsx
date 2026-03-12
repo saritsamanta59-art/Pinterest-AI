@@ -1,19 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged, 
-  User as FirebaseUser 
-} from 'firebase/auth';
-import { 
   doc, 
-  getDoc, 
   setDoc, 
   updateDoc, 
-  deleteDoc,
   onSnapshot
 } from 'firebase/firestore';
-import { auth, db, googleProvider } from '../firebase';
+import { db } from '../firebase';
 
 interface User {
   id: string;
@@ -26,78 +18,50 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  loginWithGoogle: () => Promise<void>;
-  logout: () => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
-  deleteAccount: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// We use a constant ID for the single-user mode
+const DEFAULT_USER_ID = 'default-user';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        // User is signed in, fetch data from Firestore
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        
-        // Use onSnapshot for real-time updates
-        const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setUser(docSnap.data() as User);
-          } else {
-            // Create user doc if it doesn't exist (first time login)
-            const newUser: User = {
-              id: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              name: firebaseUser.displayName || 'User',
-              geminiApiKey: '',
-              pinterestAccounts: []
-            };
-            setDoc(userDocRef, newUser);
-            setUser(newUser);
-          }
-          setLoading(false);
-        }, (error) => {
-          console.error('Firestore snapshot error:', error);
-          setLoading(false);
-        });
-
-        return () => unsubDoc();
+    // Directly fetch/sync the default user document
+    const userDocRef = doc(db, 'users', DEFAULT_USER_ID);
+    
+    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setUser(docSnap.data() as User);
       } else {
-        setUser(null);
-        setLoading(false);
+        // Create default user doc if it doesn't exist
+        const newUser: User = {
+          id: DEFAULT_USER_ID,
+          email: 'admin@pingenius.ai',
+          name: 'Admin User',
+          geminiApiKey: '',
+          pinterestAccounts: []
+        };
+        setDoc(userDocRef, newUser);
+        setUser(newUser);
       }
+      setLoading(false);
+    }, (error) => {
+      console.error('Firestore snapshot error:', error);
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  const loginWithGoogle = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error('Google login failed', error);
-      throw error;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error('Logout failed', error);
-    }
-  };
-
   const updateProfile = async (data: Partial<User>) => {
-    if (!user) return;
     try {
-      const userDocRef = doc(db, 'users', user.id);
+      const userDocRef = doc(db, 'users', DEFAULT_USER_ID);
       await updateDoc(userDocRef, data);
     } catch (error) {
       console.error('Update profile failed', error);
@@ -105,25 +69,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteAccount = async () => {
-    if (!user) return;
-    try {
-      const userDocRef = doc(db, 'users', user.id);
-      await deleteDoc(userDocRef);
-      await auth.currentUser?.delete();
-    } catch (error) {
-      console.error('Delete account failed', error);
-      throw error;
-    }
-  };
-
   const getIdToken = async () => {
-    if (!auth.currentUser) return null;
-    return await auth.currentUser.getIdToken();
+    // In no-auth mode, we return a dummy token or null
+    // Note: The backend proxy might need adjustment if it strictly verifies tokens
+    return 'no-auth-token';
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginWithGoogle, logout, updateProfile, deleteAccount, getIdToken }}>
+    <AuthContext.Provider value={{ user, loading, updateProfile, getIdToken }}>
       {children}
     </AuthContext.Provider>
   );

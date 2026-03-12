@@ -24,22 +24,11 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
-// Auth Middleware using Firebase Admin
+// Auth Middleware (Disabled for no-auth mode)
 const requireAuth = async (req: any, res: any, next: any) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
-  const idToken = authHeader.split('Bearer ')[1];
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    req.user = decodedToken;
-    next();
-  } catch (error) {
-    console.error('Error verifying Firebase ID token:', error);
-    res.status(401).json({ message: 'Unauthorized' });
-  }
+  // In no-auth mode, we bypass token verification
+  req.user = { uid: 'default-user', email: 'admin@pingenius.ai' };
+  next();
 };
 
 // Pinterest OAuth Config

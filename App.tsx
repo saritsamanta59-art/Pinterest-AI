@@ -4,7 +4,6 @@ import { Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
 import { ControlPanel } from './components/ControlPanel';
 import { CanvasPreview, CanvasPreviewHandle } from './components/CanvasPreview';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
-import { Auth } from './components/Auth';
 import { Profile } from './components/Profile';
 import { useAuth } from './components/AuthContext';
 import { generatePinVariations, generatePinImage } from './services/geminiService';
@@ -18,12 +17,11 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
       <Loader2 className="w-8 h-8 animate-spin text-red-600" />
     </div>
   );
-  if (!user) return <Navigate to="/auth" />;
   return <>{children}</>;
 };
 
 export default function App() {
-  const { user, logout, loading: authLoading, getIdToken, updateProfile } = useAuth();
+  const { user, loading: authLoading, getIdToken, updateProfile } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const canvasPreviewRef = useRef<CanvasPreviewHandle>(null);
@@ -291,11 +289,6 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/auth');
-  };
-
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<string | null>(null);
 
@@ -396,51 +389,35 @@ export default function App() {
           </Link>
           
           <div className="flex items-center gap-4">
-            {user ? (
-              <div className="relative" ref={userMenuRef}>
-                <button 
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-2 p-1.5 pl-3 rounded-2xl bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-all"
-                >
-                  <span className="text-xs font-bold text-slate-700">{user.name}</span>
-                  <div className="w-8 h-8 rounded-xl bg-red-600 flex items-center justify-center text-white">
-                    <UserIcon className="w-4 h-4" />
-                  </div>
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="px-4 py-2 border-b border-slate-100 mb-2">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Signed in as</p>
-                      <p className="text-xs font-bold text-slate-700 truncate">{user.email}</p>
-                    </div>
-                    <Link 
-                      to="/profile" 
-                      onClick={() => setShowUserMenu(false)}
-                      className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
-                    >
-                      <Settings className="w-4 h-4" />
-                      Account Settings
-                    </Link>
-                    <button 
-                      onClick={handleLogout}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Sign Out
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <Link 
-                to="/auth" 
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition-all"
+            <div className="relative" ref={userMenuRef}>
+              <button 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center gap-2 p-1.5 pl-3 rounded-2xl bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-all"
               >
-                Sign In
-              </Link>
-            )}
+                <span className="text-xs font-bold text-slate-700">{user?.name || 'Admin'}</span>
+                <div className="w-8 h-8 rounded-xl bg-red-600 flex items-center justify-center text-white">
+                  <UserIcon className="w-4 h-4" />
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="px-4 py-2 border-b border-slate-100 mb-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Signed in as</p>
+                    <p className="text-xs font-bold text-slate-700 truncate">{user?.email || 'admin@pingenius.ai'}</p>
+                  </div>
+                  <Link 
+                    to="/profile" 
+                    onClick={() => setShowUserMenu(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Account Settings
+                  </Link>
+                </div>
+              )}
+            </div>
             <div className="hidden md:flex items-center gap-4">
                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-1 rounded">PRO</span>
             </div>
@@ -451,7 +428,6 @@ export default function App() {
       <div className="flex-1 flex flex-col">
         <Routes>
           <Route path="/privacypolicy" element={<PrivacyPolicy />} />
-          <Route path="/auth" element={<Auth />} />
           <Route path="/profile" element={
             <ProtectedRoute>
               <Profile 

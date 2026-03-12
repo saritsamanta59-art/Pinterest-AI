@@ -1,5 +1,5 @@
 {
   "name": "Remix: Copy of PinGenius AI 4",
-  "description": "Create viral Pinterest pins with AI-generated text and images using Gemini.",
+  "description": "A single-user Pinterest marketing tool powered by AI. Create viral pins with Gemini without requiring a login.",
   "requestFramePermissions": []
 }

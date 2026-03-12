@@ -22,7 +22,7 @@ interface ProfileProps {
 }
 
 export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnectingPinterest }) => {
-  const { user, updateProfile, deleteAccount } = useAuth();
+  const { user, updateProfile } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [geminiKey, setGeminiKey] = useState(user?.geminiApiKey || '');
   const [loading, setLoading] = useState(false);
@@ -37,22 +37,6 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
       setStatus({ type: 'success', msg: 'Profile updated successfully!' });
     } catch (err: any) {
       setStatus({ type: 'error', msg: err.message });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteAccount = async () => {
-    if (!window.confirm('Are you absolutely sure? This will permanently delete your account and all connected data.')) {
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      await deleteAccount();
-      window.location.href = '/auth';
-    } catch (err: any) {
-      setStatus({ type: 'error', msg: err.message || 'Failed to delete account' });
     } finally {
       setLoading(false);
     }
@@ -254,23 +238,6 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
                 </div>
               </div>
             </div>
-          </section>
-
-          <section className="bg-red-50 rounded-3xl border border-red-100 p-6 space-y-4">
-            <h3 className="text-sm font-bold text-red-900 uppercase tracking-wider flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" /> Danger Zone
-            </h3>
-            <p className="text-xs text-red-700 leading-relaxed">
-              Once you delete your account, there is no going back. Please be certain.
-            </p>
-            <button 
-              onClick={handleDeleteAccount}
-              disabled={loading}
-              className="w-full py-3 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              Delete Account
-            </button>
           </section>
         </div>
       </div>

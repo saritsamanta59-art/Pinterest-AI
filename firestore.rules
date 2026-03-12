@@ -43,10 +43,11 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data);
-      allow delete: if isOwner(userId);
+      // Allow access to the default-user document without authentication
+      allow read, write: if userId == 'default-user';
+      
+      // Keep other users protected (though they won't be used in this mode)
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
     // Default deny
