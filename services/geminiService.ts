@@ -9,6 +9,23 @@ const getAI = (userApiKey?: string) => {
   return new GoogleGenAI({ apiKey });
 };
 
+const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const isTransient = err.message?.includes('fetch') || err.message?.includes('aborted') || err.message?.includes('network');
+      if (isTransient && i < retries - 1) {
+        console.warn(`AI call failed, retrying (${i + 1}/${retries})...`, err.message);
+        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('AI call failed after multiple retries');
+};
+
 export const generatePinVariations = async (keyword: string, userApiKey?: string): Promise<{ variations: PinVariation[], gradientColors: string[] }> => {
   const ai = getAI(userApiKey);
   const textPrompt = `
@@ -30,7 +47,7 @@ export const generatePinVariations = async (keyword: string, userApiKey?: string
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
       contents: textPrompt,
       config: {
@@ -63,7 +80,7 @@ export const generatePinVariations = async (keyword: string, userApiKey?: string
           required: ["variations", "gradientColors"]
         }
       }
-    });
+    }));
 
     if (!response.text) {
       throw new Error("Empty response from AI model.");
@@ -92,7 +109,7 @@ export const generateSEOMetadata = async (headline: string, keyword: string, use
   `;
   
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
       contents: prompt,
       config: {
@@ -107,7 +124,7 @@ export const generateSEOMetadata = async (headline: string, keyword: string, use
           required: ["title", "description", "hashtags"]
         }
       }
-    });
+    }));
     
     if (!response.text) {
       throw new Error("Empty response from AI model.");
@@ -125,7 +142,7 @@ export const rephraseCTA = async (headline: string, userApiKey?: string): Promis
   const prompt = `Based on the Pinterest headline: "${headline}", suggest 3 short, high-converting Call to Action (CTA) phrases. Max 25 characters each. Output as JSON array of strings.`;
   
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
       contents: prompt,
       config: {
@@ -135,7 +152,7 @@ export const rephraseCTA = async (headline: string, userApiKey?: string): Promis
           items: { type: Type.STRING }
         }
       }
-    });
+    }));
 
     if (!response.text) {
       throw new Error("Empty response from AI model.");
@@ -151,11 +168,11 @@ export const rephraseCTA = async (headline: string, userApiKey?: string): Promis
 export const generatePinImage = async (prompt: string, userApiKey?: string): Promise<string> => {
   const ai = getAI(userApiKey);
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: [{ text: prompt }] },
       config: { imageConfig: { aspectRatio: "3:4" } }
-    });
+    }));
     if (response.candidates && response.candidates[0].content.parts) {
         for (const part of response.candidates[0].content.parts) {
             if (part.inlineData?.data) {

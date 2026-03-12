@@ -8,6 +8,24 @@ export interface PinterestPinData {
   publishAt?: string; // ISO 8601 string for scheduling
 }
 
+const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 1000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      return response;
+    } catch (err: any) {
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.name === 'TypeError';
+      if (isNetworkError && i < retries - 1) {
+        console.warn(`Fetch failed, retrying (${i + 1}/${retries})...`, err.message);
+        await new Promise(resolve => setTimeout(resolve, delay * (i + 1))); // Exponential backoff
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Fetch failed after multiple retries');
+};
+
 export const createPinterestPin = async (data: PinterestPinData, token: string, idToken: string) => {
   const payload: any = {
     title: data.title,
@@ -25,7 +43,7 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
     payload.publish_at = data.publishAt;
   }
 
-  const response = await fetch('/api/pinterest/proxy', {
+  const response = await fetchWithRetry('/api/pinterest/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -75,7 +93,7 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
 };
 
 export const fetchPinterestBoards = async (token: string, idToken: string) => {
-  const response = await fetch('/api/pinterest/proxy', {
+  const response = await fetchWithRetry('/api/pinterest/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

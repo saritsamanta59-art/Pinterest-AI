@@ -8,7 +8,8 @@ import { Profile } from './components/Profile';
 import { useAuth } from './components/AuthContext';
 import { generatePinVariations, generatePinImage } from './services/geminiService';
 import { PinVariation, PinConfig, FONTS, PinterestAccount } from './types';
-import { fetchPinterestBoards } from './services/pinterestService';
+import { fetchPinterestBoards, createPinterestPin } from './services/pinterestService';
+import { renderPinToDataUrl } from './services/renderService';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -325,7 +326,6 @@ export default function App() {
 
     try {
       console.log("Pinterest Fix v3 (JPEG/Aggressive) Active");
-      const { renderPinToDataUrl } = await import('./services/renderService');
       const dataUrl = await renderPinToDataUrl(variation, config);
       const base64Part = dataUrl.split(',').pop() || '';
       // Aggressively remove ANY character that isn't valid base64
@@ -361,7 +361,6 @@ export default function App() {
         pinData.publishAt = dateToUse.toISOString(); 
       }
 
-      const { createPinterestPin } = await import('./services/pinterestService');
       const idToken = await getIdToken();
       if (!idToken) throw new Error("Not authenticated");
 
