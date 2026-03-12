@@ -40,6 +40,7 @@ export default function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [loadingImages, setLoadingImages] = useState<Record<number, boolean>>({});
+  const processingImages = useRef<Set<number>>(new Set());
   const [errorMsg, setErrorMsg] = useState('');
   const [scheduleDate, setScheduleDate] = useState<string>(() => {
     const d = new Date(Date.now() + 60 * 60 * 1000); // Default to 1 hour from now
@@ -121,6 +122,7 @@ export default function App() {
         throw new Error("No variations generated.");
       }
     } catch (error: any) {
+      if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
       setErrorMsg(error.message || "Failed to generate content.");
     } finally {
       setIsGeneratingText(false);
@@ -248,8 +250,10 @@ export default function App() {
 
       for (let i = 0; i < variations.length; i++) {
         const v = variations[i];
-        if (!v.imageUrl && !v.fallbackMode && !loadingImages[i]) {
+        if (!v.imageUrl && !v.fallbackMode && !loadingImages[i] && !processingImages.current.has(i)) {
+          processingImages.current.add(i);
           setLoadingImages(prev => ({ ...prev, [i]: true }));
+          
           try {
             const base64Image = await generatePinImage(v.imagePrompt, user?.geminiApiKey);
             setVariations(prev => {
@@ -259,7 +263,13 @@ export default function App() {
               }
               return newVars;
             });
-          } catch (e) {
+          } catch (e: any) {
+            // Ignore abort errors as they are usually intentional or benign during navigation
+            if (e.name === 'AbortError' || e.message?.includes('aborted')) {
+              console.log('Image generation aborted for index', i);
+              return;
+            }
+            
             setVariations(prev => {
               const newVars = [...prev];
               if (newVars[i]) {
@@ -268,16 +278,16 @@ export default function App() {
               return newVars;
             });
           } finally {
+            processingImages.current.delete(i);
             setLoadingImages(prev => ({ ...prev, [i]: false }));
           }
-          // Break after one generation to allow React to update and avoid blocking
-          // The next effect run will pick up the next missing image
-          break;
+          // We don't break here anymore, but we rely on the ref to prevent duplicates
+          // The loop will continue and start the next one if it's not already processing
         }
       }
     };
     generateImagesInBackground();
-  }, [variations, loadingImages, isGeneratingText]);
+  }, [variations, isGeneratingText]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -360,6 +370,7 @@ export default function App() {
       setPublishStatus(schedule ? `Successfully scheduled Pin #${index + 1}!` : `Successfully published Pin #${index + 1}!`);
       setTimeout(() => setPublishStatus(null), 5000);
     } catch (error: any) {
+      if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
       console.error('Publishing Error:', error);
       let msg = error.message;
       if (msg.toLowerCase().includes('business') || msg.toLowerCase().includes('permission')) {
