@@ -121,6 +121,19 @@ app.put('/api/user/profile', requireAuth, async (req, res) => {
   res.json({ user: userWithoutPassword });
 });
 
+app.delete('/api/user/account', requireAuth, async (req, res) => {
+  const users = getUsers();
+  const index = users.findIndex((u: any) => u.id === (req.session as any).userId);
+  if (index === -1) return res.status(404).json({ message: 'User not found' });
+  
+  users.splice(index, 1);
+  saveUsers(users);
+  
+  req.session.destroy(() => {
+    res.json({ message: 'Account deleted' });
+  });
+});
+
 app.post('/api/user/pinterest-accounts', requireAuth, async (req, res) => {
   const { account } = req.body;
   if (!account) return res.status(400).json({ message: 'Account data required' });

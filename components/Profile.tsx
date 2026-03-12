@@ -43,6 +43,27 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
     }
   };
 
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('Are you absolutely sure? This will permanently delete your account and all connected data.')) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await fetch('/api/user/account', { method: 'DELETE' });
+      if (res.ok) {
+        window.location.href = '/auth';
+      } else {
+        const err = await res.json();
+        setStatus({ type: 'error', msg: err.message || 'Failed to delete account' });
+      }
+    } catch (err: any) {
+      setStatus({ type: 'error', msg: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-4 lg:p-8 space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -175,10 +196,41 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
                   <span className="px-2 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-bold rounded-lg uppercase">Active</span>
                 </div>
                 
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
                   <p className="text-xs text-slate-500 leading-relaxed">
                     Connect your Pinterest accounts to publish pins directly from PinGenius.
                   </p>
+                  
+                  {user?.pinterestAccounts && user.pinterestAccounts.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Connected Accounts</p>
+                      {user.pinterestAccounts.map((account: any) => (
+                        <div key={account.username} className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-100 group">
+                          <div className="flex items-center gap-2">
+                            {account.profileImage ? (
+                              <img src={account.profileImage} alt={account.username} className="w-6 h-6 rounded-full" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500">
+                                {account.username[0].toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-xs font-bold text-slate-700">@{account.username}</span>
+                          </div>
+                          <button 
+                            onClick={async () => {
+                              const newAccounts = user.pinterestAccounts?.filter((a: any) => a.username !== account.username);
+                              await updateProfile({ pinterestAccounts: newAccounts });
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            title="Disconnect Account"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <button 
                     onClick={onConnectPinterest}
                     disabled={isConnectingPinterest}
@@ -217,8 +269,13 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
             <p className="text-xs text-red-700 leading-relaxed">
               Once you delete your account, there is no going back. Please be certain.
             </p>
-            <button className="w-full py-3 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 transition-all flex items-center justify-center gap-2">
-              <Trash2 className="w-4 h-4" /> Delete Account
+            <button 
+              onClick={handleDeleteAccount}
+              disabled={loading}
+              className="w-full py-3 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              Delete Account
             </button>
           </section>
         </div>
