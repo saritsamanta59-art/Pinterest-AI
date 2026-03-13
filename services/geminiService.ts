@@ -9,21 +9,47 @@ const getAI = (userApiKey?: string) => {
   return new GoogleGenAI({ apiKey });
 };
 
-const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
+const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> => {
   for (let i = 0; i < retries; i++) {
     try {
       return await fn();
     } catch (err: any) {
-      const isTransient = err.message?.includes('fetch') || err.message?.includes('aborted') || err.message?.includes('network');
+      const errMsg = err.message?.toLowerCase() || "";
+      const is503 = errMsg.includes('503') || errMsg.includes('unavailable') || errMsg.includes('high demand');
+      const isTransient = is503 || errMsg.includes('fetch') || errMsg.includes('network') || errMsg.includes('deadline') || errMsg.includes('timeout');
+      
+      // If it's a 503 or transient error, retry with exponential backoff
       if (isTransient && i < retries - 1) {
-        console.warn(`AI call failed, retrying (${i + 1}/${retries})...`, err.message);
-        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+        const waitTime = delay * Math.pow(2, i);
+        console.warn(`AI call failed (attempt ${i + 1}/${retries}), retrying in ${waitTime}ms...`, err.message);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
         continue;
       }
+      
+      // If it's an abort error, we might want to just throw it without retry
+      // but we should make sure it's handled gracefully upstream
       throw err;
     }
   }
-  throw new Error('AI call failed after multiple retries');
+  throw new Error('AI service is currently unavailable due to high demand. Please try again in a few moments.');
+};
+
+const parseAIError = (error: any): string => {
+  if (typeof error === 'string') return error;
+  
+  // Try to extract message from Gemini SDK error structure
+  const msg = error.message || "";
+  try {
+    // Sometimes the message is a JSON string
+    if (msg.startsWith('{')) {
+      const parsed = JSON.parse(msg);
+      return parsed.error?.message || parsed.message || msg;
+    }
+  } catch (e) {
+    // Not JSON, continue with original message
+  }
+  
+  return msg || "An unexpected AI error occurred.";
 };
 
 export const generatePinVariations = async (keyword: string, userApiKey?: string): Promise<{ variations: PinVariation[], gradientColors: string[] }> => {
@@ -88,8 +114,9 @@ export const generatePinVariations = async (keyword: string, userApiKey?: string
 
     return JSON.parse(response.text);
   } catch (error: any) {
+    const parsedMsg = parseAIError(error);
     console.error("Text Generation Error:", error);
-    throw new Error(error.message || "Failed to generate variations.");
+    throw new Error(parsedMsg);
   }
 };
 
@@ -132,8 +159,9 @@ export const generateSEOMetadata = async (headline: string, keyword: string, use
 
     return JSON.parse(response.text);
   } catch (e: any) {
+    const parsedMsg = parseAIError(e);
     console.error("SEO Metadata Error:", e);
-    throw new Error(e.message || "Failed to generate SEO metadata.");
+    throw new Error(parsedMsg);
   }
 };
 
@@ -160,6 +188,7 @@ export const rephraseCTA = async (headline: string, userApiKey?: string): Promis
 
     return JSON.parse(response.text);
   } catch (e: any) {
+    // For CTA, we can return defaults instead of throwing
     console.error("CTA Rephrase Error:", e);
     return ["Learn More", "Get Started", "Read Now"];
   }
@@ -181,7 +210,9 @@ export const generatePinImage = async (prompt: string, userApiKey?: string): Pro
         }
     }
     throw new Error("No image data");
-  } catch (error) {
-    throw error;
+  } catch (error: any) {
+    const parsedMsg = parseAIError(error);
+    console.error("Image Generation Error:", error);
+    throw new Error(parsedMsg);
   }
 };

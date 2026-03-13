@@ -23,9 +23,12 @@ const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, de
       return response;
     } catch (err: any) {
       const msg = err.message?.toLowerCase() || '';
+      const isAbort = err.name === 'AbortError' || msg.includes('aborted');
       const isNetworkError = msg.includes('failed to fetch') || 
                              err.name === 'TypeError' || 
-                             msg.includes('aborted');
+                             (msg.includes('abort') && !isAbort); // Only retry if it's a generic "abort" that isn't a true AbortError
+      
+      if (isAbort) throw err; // Don't retry true aborts
       
       if (isNetworkError && i < retries - 1) {
         console.warn(`Fetch failed, retrying (${i + 1}/${retries})...`, err.message);
@@ -99,21 +102,25 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
     try {
       const errorData = JSON.parse(responseText);
       // The proxy returns { message, details }
-      errorMessage = errorData.message || errorMessage;
+      if (errorData.message) {
+        errorMessage = errorData.message;
+      }
       
       // If there are specific validation errors in the details, append them
       const details = errorData.details;
-      if (details?.errors && Array.isArray(details.errors)) {
-        const subErrors = details.errors.map((e: any) => e.message).join(', ');
-        if (subErrors) errorMessage += `: ${subErrors}`;
-      } else if (details?.message) {
-        errorMessage = details.message;
+      if (details) {
+        if (details.errors && Array.isArray(details.errors)) {
+          const subErrors = details.errors.map((e: any) => e.message).join(', ');
+          if (subErrors) errorMessage += ` (${subErrors})`;
+        } else if (details.message && details.message !== errorData.message) {
+          errorMessage += ` - ${details.message}`;
+        }
       }
     } catch (e) {
       // If not JSON, use the raw text if available
       if (responseText) {
         if (responseText.includes('<title>403 Forbidden</title>')) {
-          errorMessage = "Access Forbidden (403). This usually means your Pinterest account or app doesn't have permission to perform this action, or the request was blocked by a security filter.";
+          errorMessage = "Access Forbidden (403). This usually means your Pinterest account is not added as a 'Sandbox User' in your Pinterest App settings, or you are trying to post to a production account while your app is in 'Trial' mode.";
         } else {
           errorMessage = responseText;
         }
@@ -166,6 +173,52 @@ export const fetchPinterestBoards = async (token: string, idToken: string) => {
   try {
     const data = await response.json();
     return data.items || [];
+  } catch (e) {
+    throw new Error('Invalid response from server');
+  }
+};
+
+export const createPinterestBoard = async (name: string, description: string, token: string, idToken: string) => {
+  const response = await fetchWithRetry('/api/pinterest/proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      endpoint: '/boards',
+      method: 'POST',
+      token: token,
+      data: {
+        name: name,
+        description: description,
+        privacy: 'PUBLIC'
+      }
+    }),
+  });
+
+  if (!response.ok) {
+    let errorMessage = 'Failed to create Pinterest board';
+    let responseText = '';
+    try {
+      responseText = await response.text();
+    } catch (e) {
+      console.error('Failed to read error response body');
+    }
+
+    try {
+      const errorData = JSON.parse(responseText);
+      errorMessage = errorData.message || errorMessage;
+    } catch (e) {
+      if (responseText) {
+        errorMessage = responseText;
+      }
+    }
+    throw new Error(errorMessage);
+  }
+
+  try {
+    return await response.json();
   } catch (e) {
     throw new Error('Invalid response from server');
   }

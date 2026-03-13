@@ -8,7 +8,7 @@ import { Profile } from './components/Profile';
 import { useAuth } from './components/AuthContext';
 import { generatePinVariations, generatePinImage } from './services/geminiService';
 import { PinVariation, PinConfig, FONTS, PinterestAccount } from './types';
-import { fetchPinterestBoards, createPinterestPin, getPinterestConfig } from './services/pinterestService';
+import { fetchPinterestBoards, createPinterestPin, getPinterestConfig, createPinterestBoard } from './services/pinterestService';
 import { renderPinToDataUrl } from './services/renderService';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -135,7 +135,7 @@ export default function App() {
         throw new Error("No variations generated.");
       }
     } catch (error: any) {
-      if (error.name === 'AbortError' || error.message?.toLowerCase().includes('aborted')) return;
+      if (isAbortError(error)) return;
       setErrorMsg(error.message || "Failed to generate content.");
     } finally {
       setIsGeneratingText(false);
@@ -188,7 +188,8 @@ export default function App() {
       const top = window.screenY + (window.innerHeight - height) / 2;
       
       window.open(url, 'pinterest_oauth', `width=${width},height=${height},left=${left},top=${top}`);
-    } catch (error) {
+    } catch (error: any) {
+      if (isAbortError(error)) return;
       console.error('Failed to get Pinterest auth URL', error);
       setErrorMsg('Failed to connect to Pinterest.');
     } finally {
@@ -229,7 +230,8 @@ export default function App() {
           setSelectedAccountId(newAccount.username);
           if (boards.length > 0) setSelectedBoardId(boards[0].id);
         }
-      } catch (e) {
+      } catch (e: any) {
+        if (isAbortError(e)) return;
         console.error('Failed to fetch boards or save account', e);
         setErrorMsg('Failed to sync Pinterest account.');
       }
@@ -278,7 +280,7 @@ export default function App() {
             });
           } catch (e: any) {
             // Ignore abort errors as they are usually intentional or benign during navigation
-            if (e.name === 'AbortError' || e.message?.toLowerCase().includes('aborted')) {
+            if (isAbortError(e)) {
               console.log('Image generation aborted for index', i);
               return;
             }
@@ -314,6 +316,12 @@ export default function App() {
 
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<string | null>(null);
+
+  const isAbortError = (error: any) => {
+    return error.name === 'AbortError' || 
+           error.message?.toLowerCase().includes('aborted') || 
+           error.message?.toLowerCase().includes('abort');
+  };
 
   const handlePublishSingle = async (index: number, schedule: boolean = false, customDate?: string) => {
     const variation = variations[index];
@@ -381,7 +389,7 @@ export default function App() {
       setPublishStatus(schedule ? `Successfully scheduled Pin #${index + 1}!` : `Successfully published Pin #${index + 1}!`);
       setTimeout(() => setPublishStatus(null), 5000);
     } catch (error: any) {
-      if (error.name === 'AbortError' || error.message?.toLowerCase().includes('aborted')) return;
+      if (isAbortError(error)) return;
       console.error('Publishing Error:', error);
       let msg = error.message;
       if (msg.toLowerCase().includes('business') || msg.toLowerCase().includes('permission')) {
@@ -393,6 +401,98 @@ export default function App() {
       setPublishStatus(`Error: ${msg}`);
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handlePublishAll = async (schedule: boolean = false, customDate?: string) => {
+    if (!selectedAccountId || variations.length === 0 || isPublishing) return;
+    
+    const account = accounts.find(a => a.username === selectedAccountId);
+    if (!account) return;
+
+    setIsPublishing(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < variations.length; i++) {
+      const variation = variations[i];
+      const boardId = variation.targetBoardId || selectedBoardId;
+      
+      setPublishStatus(`Processing Pin ${i + 1}/${variations.length}...`);
+
+      if (!boardId || (!variation.imageUrl && !variation.fallbackMode)) {
+        failCount++;
+        continue;
+      }
+
+      try {
+        const dataUrl = await renderPinToDataUrl(variation, config);
+        const base64Part = dataUrl.split(',').pop() || '';
+        const imageData = base64Part.replace(/[^a-zA-Z0-9+/=]/g, '');
+        
+        if (!imageData || imageData.length < 10) throw new Error("Invalid image");
+
+        const slugify = (text: string) => text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
+        const finalUrl = variation.destinationUrl || (baseUrl ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}${slugify(variation.seoTitle)}` : baseUrl);
+
+        const pinData: any = {
+          title: variation.seoTitle,
+          description: variation.seoDescription,
+          boardId: boardId,
+          link: finalUrl,
+          imageData: imageData,
+        };
+
+        if (schedule) {
+          // If scheduling all, we might want to stagger them by 15 mins each if no custom date is provided
+          // or just use the same custom date for all (Pinterest allows same time for different pins usually)
+          const baseDate = customDate ? new Date(customDate) : new Date(Date.now() + 15 * 60 * 1000);
+          const staggeredDate = new Date(baseDate.getTime() + (i * 15 * 60 * 1000));
+          pinData.publishAt = staggeredDate.toISOString();
+        }
+
+        const idToken = await getIdToken();
+        if (!idToken) throw new Error("Not authenticated");
+
+        await createPinterestPin(pinData, account.accessToken, idToken);
+        successCount++;
+      } catch (error) {
+        if (isAbortError(error)) return;
+        console.error(`Error publishing pin ${i + 1}:`, error);
+        failCount++;
+      }
+    }
+
+    setPublishStatus(`Finished! Success: ${successCount}, Failed: ${failCount}`);
+    setIsPublishing(false);
+    setTimeout(() => setPublishStatus(null), 5000);
+  };
+
+  const handleCreateBoard = async (name: string) => {
+    const account = accounts.find(a => a.username === selectedAccountId);
+    if (!account) return;
+
+    try {
+      const idToken = await getIdToken();
+      if (!idToken) throw new Error("Not authenticated");
+
+      const newBoard = await createPinterestBoard(name, "Created via PinGenius AI", account.accessToken, idToken);
+      
+      // Refresh boards for the current account
+      const updatedBoards = await fetchPinterestBoards(account.accessToken, idToken);
+      const updatedAccounts = accounts.map(acc => 
+        acc.username === account.username ? { ...acc, boards: updatedBoards } : acc
+      );
+
+      await updateProfile({ pinterestAccounts: updatedAccounts });
+      setAccounts(updatedAccounts);
+      setSelectedBoardId(newBoard.id);
+      setPublishStatus(`Board "${name}" created successfully!`);
+      setTimeout(() => setPublishStatus(null), 3000);
+    } catch (error: any) {
+      if (isAbortError(error)) return;
+      console.error('Failed to create board', error);
+      setErrorMsg(`Failed to create board: ${error.message}`);
     }
   };
 
@@ -493,6 +593,8 @@ export default function App() {
                     isPublishing={isPublishing}
                     publishStatus={publishStatus}
                     onPublishSingle={handlePublishSingle}
+                    onPublishAll={handlePublishAll}
+                    onCreateBoard={handleCreateBoard}
                     scheduleDate={scheduleDate}
                     setScheduleDate={setScheduleDate}
                     isSandbox={pinterestConfig.useSandbox}

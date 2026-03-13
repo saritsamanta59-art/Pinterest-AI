@@ -181,7 +181,7 @@ app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
   
   console.log(`[Pinterest Proxy] ${method || 'GET'} ${endpoint}`);
 
-  if (method === 'POST') {
+  if (method === 'POST' && endpoint === '/pins') {
     if (data?.media_source?.source_type === 'image_base64' && typeof data.media_source.data === 'string') {
       // Clean base64 string
       data.media_source.data = data.media_source.data.replace(/[^a-zA-Z0-9+/=]/g, '');
@@ -222,11 +222,13 @@ app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
     } else if (status === 403) {
       if (typeof errorData === 'object') {
         if (errorData?.message?.includes('Trial access')) {
-          message = 'Your Pinterest App is in "Trial" mode and cannot publish to production. Please set PINTEREST_USE_SANDBOX=true in your environment variables to use the API Sandbox.';
+          message = 'Your Pinterest App is in "Trial" mode. In this mode, you can ONLY publish to the Sandbox API. To fix this: 1. Set PINTEREST_USE_SANDBOX=true in your environment variables. 2. Ensure your Pinterest account is added as a "Sandbox User" in the Pinterest Developer Portal.';
         } else if (errorData?.message?.includes('scope')) {
-          message = 'Insufficient permissions (Scope Error). Your Pinterest app may not have "pins:write" or "boards:read" permissions approved.';
+          message = 'Insufficient permissions (Scope Error). Your Pinterest app may not have "pins:write" or "boards:read" permissions approved for this environment.';
+        } else if (errorData?.message?.includes('not a sandbox user')) {
+          message = 'Access Denied: Your account is not registered as a Sandbox User for this app. Please add your Pinterest username to the "Sandbox Users" list in the Pinterest Developer Portal.';
         } else {
-          message = errorData.message || (errorData.errors && errorData.errors[0]?.message) || 'Access Forbidden (403). Ensure your Pinterest account is added as a "Sandbox User" in the developer portal.';
+          message = errorData.message || (errorData.errors && errorData.errors[0]?.message) || 'Access Forbidden (403). This usually means your account is not authorized for this app or environment (Sandbox vs Production).';
         }
       } else if (typeof errorData === 'string' && errorData.includes('<html>')) {
         message = 'Pinterest returned a Forbidden (403) HTML error. This often happens if the request is blocked by a security filter or if the API token is invalid for this environment.';
@@ -238,7 +240,12 @@ app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
     }
 
     console.error(`Pinterest Proxy Error [${status}]:`, message);
-    res.status(status).json({ message, details: errorData });
+    
+    // Ensure we always return a clean JSON response
+    res.status(status).json({ 
+      message, 
+      details: typeof errorData === 'string' && errorData.includes('<html>') ? 'HTML Error Page' : errorData 
+    });
   }
 });
 

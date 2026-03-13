@@ -53,6 +53,8 @@ interface ControlPanelProps {
   isPublishing: boolean;
   publishStatus: string | null;
   onPublishSingle: (idx: number, schedule?: boolean, customDate?: string) => void;
+  onPublishAll: (schedule?: boolean, customDate?: string) => void;
+  onCreateBoard: (name: string) => Promise<void>;
   scheduleDate: string;
   setScheduleDate: (d: string) => void;
   isSandbox?: boolean;
@@ -101,6 +103,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   isPublishing,
   publishStatus,
   onPublishSingle,
+  onPublishAll,
+  onCreateBoard,
   scheduleDate,
   setScheduleDate,
   isSandbox
@@ -111,6 +115,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const [isRephrasing, setIsRephrasing] = useState(false);
   const [isEnhancingSEO, setIsEnhancingSEO] = useState(false);
   const [ctaSuggestions, setCtaSuggestions] = useState<string[]>([]);
+  const [isCreatingBoard, setIsCreatingBoard] = useState(false);
+  const [newBoardName, setNewBoardName] = useState('');
+  const [showNewBoardForm, setShowNewBoardForm] = useState(false);
 
   const currentVariation = variations[currentVarIndex];
   const smartUrl = currentVariation && baseUrl 
@@ -134,7 +141,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     try {
       const suggestions = await rephraseCTA(config.headline, userApiKey);
       setCtaSuggestions(suggestions);
-    } catch (e) {
+    } catch (e: any) {
+      const isAbort = e.name === 'AbortError' || 
+                      e.message?.toLowerCase().includes('aborted') || 
+                      e.message?.toLowerCase().includes('abort');
+      if (isAbort) return;
       console.error(e);
     } finally {
       setIsRephrasing(false);
@@ -147,10 +158,28 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     try {
       const seo = await generateSEOMetadata(config.headline, keyword, userApiKey);
       onUpdateSEO(seo);
-    } catch (e) {
+    } catch (e: any) {
+      const isAbort = e.name === 'AbortError' || 
+                      e.message?.toLowerCase().includes('aborted') || 
+                      e.message?.toLowerCase().includes('abort');
+      if (isAbort) return;
       console.error(e);
     } finally {
       setIsEnhancingSEO(false);
+    }
+  };
+
+  const handleCreateBoard = async () => {
+    if (!newBoardName.trim() || isCreatingBoard) return;
+    setIsCreatingBoard(true);
+    try {
+      await onCreateBoard(newBoardName);
+      setNewBoardName('');
+      setShowNewBoardForm(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCreatingBoard(false);
     }
   };
 
@@ -211,17 +240,46 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             {selectedAccount && (
               <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Target Board</label>
-                  <select 
-                    value={selectedBoardId || ''} 
-                    onChange={(e) => setSelectedBoardId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-red-500 outline-none bg-white"
-                  >
-                    <option value="" disabled>Select a board</option>
-                    {selectedAccount.boards?.map(board => (
-                      <option key={board.id} value={board.id}>{board.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Target Board</label>
+                    <button 
+                      onClick={() => setShowNewBoardForm(!showNewBoardForm)}
+                      className="text-[10px] font-bold text-red-600 uppercase hover:underline"
+                    >
+                      {showNewBoardForm ? 'Cancel' : '+ New Board'}
+                    </button>
+                  </div>
+                  
+                  {showNewBoardForm ? (
+                    <div className="flex gap-2 animate-in slide-in-from-top-1 duration-200">
+                      <input 
+                        type="text" 
+                        value={newBoardName}
+                        onChange={(e) => setNewBoardName(e.target.value)}
+                        placeholder="Board Name"
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:border-red-500 outline-none"
+                        autoFocus
+                      />
+                      <button 
+                        onClick={handleCreateBoard}
+                        disabled={!newBoardName.trim() || isCreatingBoard}
+                        className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-[10px] font-bold uppercase disabled:opacity-50"
+                      >
+                        {isCreatingBoard ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Create'}
+                      </button>
+                    </div>
+                  ) : (
+                    <select 
+                      value={selectedBoardId || ''} 
+                      onChange={(e) => setSelectedBoardId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-red-500 outline-none bg-white"
+                    >
+                      <option value="" disabled>Select a board</option>
+                      {selectedAccount.boards?.map(board => (
+                        <option key={board.id} value={board.id}>{board.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -244,7 +302,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     className={`w-full py-4 rounded-xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg ${!selectedBoardId || !currentVariation || isPublishing ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95'}`}
                   >
                     {isPublishing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
-                    Schedule Pin
+                    Schedule Current Pin
+                  </button>
+
+                  <button
+                    onClick={() => onPublishAll(true, scheduleDate)}
+                    disabled={!selectedBoardId || variations.length === 0 || isPublishing}
+                    className={`w-full py-4 rounded-xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg border-2 ${!selectedBoardId || variations.length === 0 || isPublishing ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed' : 'bg-white text-red-600 border-red-600 hover:bg-red-50 active:scale-95'}`}
+                  >
+                    {isPublishing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                    Schedule All Pins
                   </button>
                 </div>
                 
@@ -286,8 +353,29 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </button>
         </div>
         {errorMsg && (
-          <div className="mt-3 text-xs p-2 rounded-lg border text-amber-600 bg-amber-50 border-amber-100">
-            {errorMsg}
+          <div className="mt-3 text-xs p-3 rounded-xl border text-red-600 bg-red-50 border-red-100 space-y-2">
+            <p className="font-bold flex items-center gap-1.5 uppercase tracking-wider">
+              <Zap className="w-3 h-3" /> Error Details
+            </p>
+            <p className="leading-relaxed">{errorMsg}</p>
+            {(errorMsg.includes('403') || errorMsg.includes('Forbidden') || errorMsg.includes('Sandbox')) && (
+              <div className="pt-2 border-t border-red-100 space-y-2">
+                <p className="text-[10px] font-bold text-red-700 uppercase">Troubleshooting Steps:</p>
+                <ul className="list-disc list-inside text-[10px] space-y-1 text-red-700">
+                  <li>Ensure your account is added as a <strong>Sandbox User</strong> in the Pinterest App settings.</li>
+                  <li>Check if <strong>PINTEREST_USE_SANDBOX</strong> matches your app's environment.</li>
+                  <li>Verify your App ID and Secret are correct.</li>
+                </ul>
+                <a 
+                  href="https://developers.pinterest.com/apps/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-bold text-red-700 hover:underline mt-1"
+                >
+                  Pinterest Developer Portal <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
           </div>
         )}
       </div>
