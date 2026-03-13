@@ -183,8 +183,9 @@ app.post('/api/pinterest/proxy', requireAuth, async (req, res) => {
 
   if (method === 'POST' && endpoint === '/pins') {
     if (data?.media_source?.source_type === 'image_base64' && typeof data.media_source.data === 'string') {
-      // Clean base64 string
-      data.media_source.data = data.media_source.data.replace(/[^a-zA-Z0-9+/=]/g, '');
+      // The client already cleans the base64 string. 
+      // Doing it again here with a global regex on a large string can cause memory/CPU spikes on restricted hosting environments.
+      // data.media_source.data = data.media_source.data.replace(/[^a-zA-Z0-9+/=]/g, '');
     }
   }
   

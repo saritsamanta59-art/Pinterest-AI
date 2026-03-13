@@ -456,6 +456,11 @@ export default function App() {
 
         await createPinterestPin(pinData, account.accessToken, idToken);
         successCount++;
+        
+        // Add a small delay between pins to prevent server overload on restricted hosting
+        if (i < variations.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       } catch (error) {
         if (isAbortError(error)) return;
         console.error(`Error publishing pin ${i + 1}:`, error);

@@ -8,14 +8,14 @@ export interface PinterestPinData {
   publishAt?: string; // ISO 8601 string for scheduling
 }
 
-const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 1000) => {
+const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 2000) => {
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
       
-      // If we get a 503, it might be a temporary overload, so we retry
-      if (response.status === 503 && i < retries - 1) {
-        console.warn(`Server returned 503, retrying (${i + 1}/${retries})...`);
+      // If we get a 503 (Service Unavailable) or 504 (Gateway Timeout), retry
+      if ((response.status === 503 || response.status === 504) && i < retries - 1) {
+        console.warn(`Server returned ${response.status}, retrying (${i + 1}/${retries})...`);
         await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
         continue;
       }
@@ -117,8 +117,10 @@ export const createPinterestPin = async (data: PinterestPinData, token: string, 
         }
       }
     } catch (e) {
-      // If not JSON, use the raw text if available
-      if (responseText) {
+      // If not JSON, check if it's an HTML error page (common on hosting providers like Hostinger)
+      if (responseText.includes('<html') || responseText.includes('<!DOCTYPE')) {
+        errorMessage = `Server Error (${response.status}): The service is temporarily unavailable or the request timed out. Please try again in a few moments.`;
+      } else if (responseText) {
         if (responseText.includes('<title>403 Forbidden</title>')) {
           errorMessage = "Access Forbidden (403). This usually means your Pinterest account is not added as a 'Sandbox User' in your Pinterest App settings, or you are trying to post to a production account while your app is in 'Trial' mode.";
         } else {
