@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthContext';
+import { isAbortError } from '../utils';
 import { 
   User, 
   Mail, 
@@ -38,6 +39,7 @@ export const Profile: React.FC<ProfileProps> = ({ onConnectPinterest, isConnecti
       await updateProfile({ name, geminiApiKey: geminiKey });
       setStatus({ type: 'success', msg: 'Profile updated successfully!' });
     } catch (err: any) {
+      if (isAbortError(err)) return;
       setStatus({ type: 'error', msg: err.message });
     } finally {
       setLoading(false);

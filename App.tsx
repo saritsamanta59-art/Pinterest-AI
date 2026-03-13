@@ -10,6 +10,7 @@ import { generatePinVariations, generatePinImage } from './services/geminiServic
 import { PinVariation, PinConfig, FONTS, PinterestAccount } from './types';
 import { fetchPinterestBoards, createPinterestPin, getPinterestConfig, createPinterestBoard } from './services/pinterestService';
 import { renderPinToDataUrl } from './services/renderService';
+import { isAbortError } from './utils';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -41,6 +42,7 @@ export default function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [pinterestConfig, setPinterestConfig] = useState({ useSandbox: false });
   const [isGeneratingText, setIsGeneratingText] = useState(false);
+  const [staggerInterval, setStaggerInterval] = useState(15);
   const [loadingImages, setLoadingImages] = useState<Record<number, boolean>>({});
   const processingImages = useRef<Set<number>>(new Set());
   const [errorMsg, setErrorMsg] = useState('');
@@ -317,12 +319,6 @@ export default function App() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<string | null>(null);
 
-  const isAbortError = (error: any) => {
-    return error.name === 'AbortError' || 
-           error.message?.toLowerCase().includes('aborted') || 
-           error.message?.toLowerCase().includes('abort');
-  };
-
   const handlePublishSingle = async (index: number, schedule: boolean = false, customDate?: string) => {
     const variation = variations[index];
     if (!selectedAccountId || !variation || isPublishing) return;
@@ -444,10 +440,9 @@ export default function App() {
         };
 
         if (schedule) {
-          // If scheduling all, we might want to stagger them by 15 mins each if no custom date is provided
-          // or just use the same custom date for all (Pinterest allows same time for different pins usually)
+          // If scheduling all, we stagger them by the user-defined interval
           const baseDate = customDate ? new Date(customDate) : new Date(Date.now() + 15 * 60 * 1000);
-          const staggeredDate = new Date(baseDate.getTime() + (i * 15 * 60 * 1000));
+          const staggeredDate = new Date(baseDate.getTime() + (i * staggerInterval * 60 * 1000));
           pinData.publishAt = staggeredDate.toISOString();
         }
 
@@ -602,6 +597,8 @@ export default function App() {
                     onCreateBoard={handleCreateBoard}
                     scheduleDate={scheduleDate}
                     setScheduleDate={setScheduleDate}
+                    staggerInterval={staggerInterval}
+                    setStaggerInterval={setStaggerInterval}
                     isSandbox={pinterestConfig.useSandbox}
                   />
                 </div>

@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { PinVariation } from "../types";
+import { isAbortError } from "../utils";
 
 const getAI = (userApiKey?: string) => {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
@@ -14,6 +15,8 @@ const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 2000): Pr
     try {
       return await fn();
     } catch (err: any) {
+      if (isAbortError(err)) throw err;
+      
       const errMsg = err.message?.toLowerCase() || "";
       const is503 = errMsg.includes('503') || errMsg.includes('unavailable') || errMsg.includes('high demand');
       const isTransient = is503 || errMsg.includes('fetch') || errMsg.includes('network') || errMsg.includes('deadline') || errMsg.includes('timeout');
@@ -114,6 +117,7 @@ export const generatePinVariations = async (keyword: string, userApiKey?: string
 
     return JSON.parse(response.text);
   } catch (error: any) {
+    if (isAbortError(error)) throw error;
     const parsedMsg = parseAIError(error);
     console.error("Text Generation Error:", error);
     throw new Error(parsedMsg);
@@ -159,6 +163,7 @@ export const generateSEOMetadata = async (headline: string, keyword: string, use
 
     return JSON.parse(response.text);
   } catch (e: any) {
+    if (isAbortError(e)) throw e;
     const parsedMsg = parseAIError(e);
     console.error("SEO Metadata Error:", e);
     throw new Error(parsedMsg);
@@ -188,6 +193,7 @@ export const rephraseCTA = async (headline: string, userApiKey?: string): Promis
 
     return JSON.parse(response.text);
   } catch (e: any) {
+    if (isAbortError(e)) throw e;
     // For CTA, we can return defaults instead of throwing
     console.error("CTA Rephrase Error:", e);
     return ["Learn More", "Get Started", "Read Now"];
@@ -211,6 +217,7 @@ export const generatePinImage = async (prompt: string, userApiKey?: string): Pro
     }
     throw new Error("No image data");
   } catch (error: any) {
+    if (isAbortError(error)) throw error;
     const parsedMsg = parseAIError(error);
     console.error("Image Generation Error:", error);
     throw new Error(parsedMsg);

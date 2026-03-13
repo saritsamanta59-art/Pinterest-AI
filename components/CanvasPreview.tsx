@@ -30,6 +30,7 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
   const [bgImageObj, setBgImageObj] = useState<HTMLImageElement | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingProgress, setRecordingProgress] = useState(0);
+  const [isCopied, setIsCopied] = useState(false);
 
   useImperativeHandle(ref, () => ({
     getCanvas: () => canvasRef.current,
@@ -168,7 +169,10 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
 
     // Automatically copy title to clipboard
     if (variation?.seoTitle) {
-      navigator.clipboard.writeText(variation.seoTitle).catch(err => {
+      navigator.clipboard.writeText(variation.seoTitle).then(() => {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000);
+      }).catch(err => {
         console.error('Failed to copy title to clipboard:', err);
       });
     }
@@ -220,7 +224,19 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
     <div className="flex flex-col items-center">
       {variation && (
         <div className="w-full max-w-[500px] flex justify-start items-center mb-4 gap-2">
-           <button onClick={handleRecord} disabled={isRecording || !bgImageObj} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2 border ${isRecording ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-700 border-slate-200 hover:border-red-600'}`}>
+          <button 
+            onClick={handleDownload} 
+            disabled={isRecording} 
+            className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2 border ${isCopied ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-slate-700 border-slate-200 hover:border-red-600'}`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            {isCopied ? 'Title Copied!' : 'Download Image'}
+          </button>
+          <button 
+            onClick={handleRecord} 
+            disabled={isRecording || !bgImageObj} 
+            className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2 border ${isRecording ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-700 border-slate-200 hover:border-red-600'}`}
+          >
             {isRecording ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
             {isRecording ? `${recordingProgress}%` : 'Video'}
           </button>

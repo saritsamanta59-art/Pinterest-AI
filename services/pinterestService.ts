@@ -1,4 +1,6 @@
 
+import { isAbortError } from '../utils';
+
 export interface PinterestPinData {
   title: string;
   description: string;
@@ -23,7 +25,7 @@ const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, de
       return response;
     } catch (err: any) {
       const msg = err.message?.toLowerCase() || '';
-      const isAbort = err.name === 'AbortError' || msg.includes('aborted');
+      const isAbort = isAbortError(err);
       const isNetworkError = msg.includes('failed to fetch') || 
                              err.name === 'TypeError' || 
                              (msg.includes('abort') && !isAbort); // Only retry if it's a generic "abort" that isn't a true AbortError

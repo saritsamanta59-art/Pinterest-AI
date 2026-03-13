@@ -19,11 +19,13 @@ import {
   ExternalLink,
   Plus,
   Calendar,
+  Clock,
   Send,
   User
 } from 'lucide-react';
 import { PinConfig, PinVariation, FONTS, PinterestAccount } from '../types';
 import { rephraseCTA, generateSEOMetadata } from '../services/geminiService';
+import { isAbortError } from '../utils';
 
 interface ControlPanelProps {
   keyword: string;
@@ -57,6 +59,8 @@ interface ControlPanelProps {
   onCreateBoard: (name: string) => Promise<void>;
   scheduleDate: string;
   setScheduleDate: (d: string) => void;
+  staggerInterval: number;
+  setStaggerInterval: (i: number) => void;
   isSandbox?: boolean;
 }
 
@@ -107,6 +111,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onCreateBoard,
   scheduleDate,
   setScheduleDate,
+  staggerInterval,
+  setStaggerInterval,
   isSandbox
 }) => {
   const [copiedTitle, setCopiedTitle] = useState(false);
@@ -142,10 +148,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       const suggestions = await rephraseCTA(config.headline, userApiKey);
       setCtaSuggestions(suggestions);
     } catch (e: any) {
-      const isAbort = e.name === 'AbortError' || 
-                      e.message?.toLowerCase().includes('aborted') || 
-                      e.message?.toLowerCase().includes('abort');
-      if (isAbort) return;
+      if (isAbortError(e)) return;
       console.error(e);
     } finally {
       setIsRephrasing(false);
@@ -159,10 +162,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       const seo = await generateSEOMetadata(config.headline, keyword, userApiKey);
       onUpdateSEO(seo);
     } catch (e: any) {
-      const isAbort = e.name === 'AbortError' || 
-                      e.message?.toLowerCase().includes('aborted') || 
-                      e.message?.toLowerCase().includes('abort');
-      if (isAbort) return;
+      if (isAbortError(e)) return;
       console.error(e);
     } finally {
       setIsEnhancingSEO(false);
@@ -293,6 +293,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-red-500 outline-none bg-white"
                   />
                   <p className="text-[9px] text-slate-400 italic">Used for both "Publish 5" and single pin scheduling.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" /> Stagger Interval (Minutes)
+                  </label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    max="1440"
+                    value={staggerInterval}
+                    onChange={(e) => setStaggerInterval(parseInt(e.target.value) || 1)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-red-500 outline-none bg-white"
+                  />
+                  <p className="text-[9px] text-slate-400 italic">Minutes between each pin when using "Schedule All Pins".</p>
                 </div>
 
                 <div className="space-y-3">
