@@ -223,15 +223,7 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
   return (
     <div className="flex flex-col items-center">
       {variation && (
-        <div className="w-full max-w-[500px] flex justify-start items-center mb-4 gap-2">
-          <button 
-            onClick={handleDownload} 
-            disabled={isRecording} 
-            className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2 border ${isCopied ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-slate-700 border-slate-200 hover:border-red-600'}`}
-          >
-            <ImageIcon className="w-4 h-4" />
-            {isCopied ? 'Title Copied!' : 'Download Image'}
-          </button>
+        <div className="w-full max-w-[500px] flex justify-between items-center mb-4 gap-2">
           <button 
             onClick={handleRecord} 
             disabled={isRecording || !bgImageObj} 
@@ -239,6 +231,14 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
           >
             {isRecording ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
             {isRecording ? `${recordingProgress}%` : 'Video'}
+          </button>
+          <button 
+            onClick={handleDownload} 
+            disabled={isRecording} 
+            className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2 border ${isCopied ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800'}`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            {isCopied ? 'Title Copied!' : 'Download'}
           </button>
         </div>
       )}
